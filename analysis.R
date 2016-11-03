@@ -3,6 +3,7 @@ library(glmnet)
 library(class)
 library(sda)
 library(MASS)
+library(zoo)
 
 set.seed(1)
 
@@ -15,31 +16,31 @@ data$PAY_0 = NULL
  # This research employed a binary variable, default payment (Yes = 1, No = 0), as the response variable.
  # This study reviewed the literature and used the following 23 variables as explanatory variables:
  # X1: Amount of the given credit (NT dollar):
- # 	it includes both the individual consumer credit and his/her family (supplementary) credit.
+ #  it includes both the individual consumer credit and his/her family (supplementary) credit.
  # X2: Gender (1 = male; 2 = female).
  # X3: Education (1 = graduate school; 2 = university; 3 = high school; 4 = others).
  # X4: Marital status (1 = married; 2 = single; 3 = others).
  # X5: Age (year).
  # X6 - X11: History of past payment. We tracked the past monthly payment records (from April to September, 2005) as follows:
- # 	X6 = the repayment status in September, 2005;
- # 	X7 = the repayment status in August, 2005; . . .;
- # 	X11 = the repayment status in April, 2005.
- # 	The measurement scale for the repayment status is: -1 = pay duly;
- # 		1 = payment delay for one month; 2 = payment delay for two months; . . .;
- # 		8 = payment delay for eight months;
- # 		9 = payment delay for nine months and above.
+ #  X6 = the repayment status in September, 2005;
+ #  X7 = the repayment status in August, 2005; . . .;
+ #  X11 = the repayment status in April, 2005.
+ #  The measurement scale for the repayment status is: -1 = pay duly;
+ #      1 = payment delay for one month; 2 = payment delay for two months; . . .;
+ #      8 = payment delay for eight months;
+ #      9 = payment delay for nine months and above.
  # X12-X17: Amount of bill statement (NT dollar).
- # 	X12 = amount of bill statement in September, 2005;
- # 	X13 = amount of bill statement in August, 2005; . . .;
- # 	X17 = amount of bill statement in April, 2005.
+ #  X12 = amount of bill statement in September, 2005;
+ #  X13 = amount of bill statement in August, 2005; . . .;
+ #  X17 = amount of bill statement in April, 2005.
  # X18-X23: Amount of previous payment (NT dollar).
- # 	X18 = amount paid in September, 2005;
- # 	X19 = amount paid in August, 2005; . . .;
- # 	X23 = amount paid in April, 2005.
+ #  X18 = amount paid in September, 2005;
+ #  X19 = amount paid in August, 2005; . . .;
+ #  X23 = amount paid in April, 2005.
 
 #############################################
 #                                           #
-# 		Logistic Regression (LASSO)         #
+#       Logistic Regression (LASSO)         #
 #                                           #
 #############################################
 x = model.matrix(default.payment.next.month ~ ., data)[, -1]
@@ -138,24 +139,34 @@ plotROC = function(fp, tp) {
     tpr = colMeans(tp)
     plot(fpr, tpr, type = 'l', xlab = 'False Positive Rate', ylab = 'True Positive Rate', main = 'ROC Curve')
     lines(x = seq(0, 1), y = seq(0, 1), col = 'red')
+
+    # AUC
+    id = order(fp)
+    sum(diff(fp[id]) * rollmean(tp[id], 2))
+}
+
+resetCV = function() {
+    cv.accuracy <<- matrix(NA, kfolds, 100)
+    cv.fp <<- matrix(NA, kfolds, 100)
+    cv.tp <<- matrix(NA, kfolds, 100)
 }
 
 for (j in 1:kfolds) {
-	foldx = x[folds == j, ]
-	foldy = y[folds == j]
-	glm.pred = rep(0, nrow(foldx))
-	glm.probs = predict(glmmod.best, newx = foldx, type = 'response')
+    foldx = x[folds == j, ]
+    foldy = y[folds == j]
+    glm.pred = rep(0, nrow(foldx))
+    glm.probs = predict(glmmod.best, newx = foldx, type = 'response')
 
-	for (i in 100:0) {
+    for (i in 100:0) {
         glm.pred[glm.probs > (i / 100)] = 1
         metrics = getMetrics(glm.pred, foldy, nrow(foldx))
         cv.accuracy[j, i] = metrics$accuracy
         cv.fp[j, i] = metrics$fp
         cv.tp[j, i] = metrics$tp
-	}
+    }
 }
 
-plotROC(cv.fp, cv.tp)
+glm.auc = plotROC(cv.fp, cv.tp) # 0.7237
 decBounds = colMeans(cv.accuracy)
 # performance trend of decision boundary
 plot(decBounds, xlab = 'Decision Boundary * 100', ylab = 'Accuracy')
@@ -165,7 +176,7 @@ glm.decBound <- which.max(decBounds) / 100 # 0.42
 
 ######################################
 #                                    #
-# 		K Nearest Neighbours         #
+#       K Nearest Neighbours         #
 #                                    #
 ######################################
 ##
@@ -238,9 +249,7 @@ sda.fit$beta
  ##
 
 # use cross validation to find best decision boundary
-cv.accuracy = matrix(NA, kfolds, 100)
-cv.tp = matrix(NA, kfolds, 100)
-cv.fp = matrix(NA, kfolds, 100)
+resetCV()
 
 for (j in 1:kfolds) {
     foldx = xLDA[folds == j, ]
@@ -259,10 +268,56 @@ for (j in 1:kfolds) {
     }
 }
 
-plotROC(cv.fp, cv.tp)
+sda.auc = plotROC(cv.fp, cv.tp) # 0.6438
 decBounds = colMeans(cv.accuracy)
 plot(decBounds, xlab = 'Decision Boundary * 100', ylab = 'Accuracy')
-decBoundLDA = which.max(decBounds) # 0.34
+decBoundLDA = which.max(decBounds) / 100 # 0.34
+
+##
+ # It seems that `sda.ranking` chose a very different subset from `lasso`.
+ # `sda.ranking` ranks features according to shrinkage t scores, which is a
+ # measure of a feature's individual contribution to the response varaible.
+ # Since the chosen subset is so different, it could suggest that CAT is not a
+ # good approach for subset selection. We try exploring collinear effects
+ # between variables in the following attempt.
+ ##
+xx = model.matrix(default.payment.next.month ~ .^2, data = data)
+ranking.LDA = sda.ranking(xx[train, ], y[train], diagonal = FALSE)
+idx2 = ranking.LDA[1:10, 'idx']
+xxLDA = xx[, idx2]
+
+sda.fit2 = sda(xxLDA, y, diagonal = FALSE)
+sda.fit2$beta
+##
+ #   LIMIT_BAL:PAY_1 BILL_AMT2:PAY_1 LIMIT_BAL:SEX BILL_AMT1:PAY_1 BILL_AMT6:PAY_1
+ # 0   -9.587408e-07   -6.202935e-07  3.601963e-07   -3.386959e-07    -7.37984e-07
+ # 1    3.375127e-06    2.183666e-06 -1.268026e-06    1.192336e-06     2.59798e-06
+ #
+ #  LIMIT_BAL:PAY_2 BILL_AMT3:PAY_1     AGE:PAY_1 BILL_AMT4:PAY_1 BILL_AMT5:PAY_1
+ #     4.584966e-08    5.267302e-08  0.0001021805   -2.880411e-07    1.455517e-07
+ #    -1.614080e-07   -1.854288e-07 -0.0003597135    1.014013e-06   -5.123964e-07
+ ##
+resetCV()
+for (j in 1:kfolds) {
+    foldx = xLDA[folds == j, ]
+    foldy = y[folds == j]
+
+    sda.pred = rep(0, nrow(foldx))
+    sda.probs = predict.sda(sda.fit, foldx)
+    for (i in 100:0) {
+        # sda.probs$posterior[, 2] is the probabilities for default
+        sda.pred[sda.probs$posterior[, 2] > (i / 100)] = 1
+
+        metrics = getMetrics(sda.pred, foldy, nrow(foldx))
+        cv.accuracy[j, i] = metrics$accuracy
+        cv.fp[j, i] = metrics$fp
+        cv.tp[j, i] = metrics$tp
+    }
+}
+sda.auc2 = plotROC(cv.fp, cv.tp) # 0.6868
+decBounds = colMeans(cv.accuracy)
+plot(decBounds, xlab = 'Decision Boundary * 100', ylab = 'Accuracy')
+decBoundLDA2 = which.max(decBounds) / 100 # 0.45
 
 
 ################################################
@@ -292,11 +347,7 @@ qda.fit = qda(default.payment.next.month ~ ., data = data)
  # 0  39042.27 6307.337 6640.465 5753.497 5300.529  5248.22 5719.372 -0.2112224
  # 1  38271.44 3397.044 3388.650 3367.352 3155.627  3219.14 3441.482  0.6681736
  ##
-
-cv.accuracy = matrix(NA, kfolds, 100)
-cv.fp = matrix(NA, kfolds, 100)
-cv.tp = matrix(NA, kfolds, 100)
-
+resetCV()
 for (j in 1:kfolds) {
     foldx = data[folds == j, ]
     foldy = y[folds == j]
@@ -313,7 +364,7 @@ for (j in 1:kfolds) {
     }
 }
 
-plotROC(cv.fp, cv.tp)
+qda.auc = plotROC(cv.fp, cv.tp) #  0.6084
 decBounds = colMeans(cv.accuracy)
 plot(decBounds, xlab = 'Decision Boundary * 100', ylab = 'Accuracy')
 decBoundQDA = which.max(decBounds) # 0.99
@@ -324,38 +375,74 @@ decBoundQDA = which.max(decBounds) # 0.99
 #       Boostrapping        #
 #                           #
 #############################
-getResampleMSE = function(method, modelObject, threshold, sampleSize, numSamples) {
-    BSErrors <- vector(, numSamples)
+rows <- nrow(data)
+
+getResampleMSE = function(method, modelObject, threshold,
+    sampleSize = 1000, numSamples = 1000, idx, collinear = FALSE) {
+    BSErrors <- matrix(NA, numSamples, 3)
+    colnames(BSErrors) <- c('TP', 'FP', 'Accuracy')
 
     for (i in 1:numSamples) {
         resample = data[sample(1:rows, sampleSize, replace = TRUE), ]
         resample.y = resample$default.payment.next.month
-        resample.x = model.matrix(default.payment.next.month ~ ., resample)[, -1]
+        resample.x = NULL
+        if (collinear) {
+            resample.x = model.matrix(default.payment.next.month ~ .^2, resample)[, -1]
+        } else {
+            resample.x = model.matrix(default.payment.next.month ~ ., resample)[, -1]
+        }
 
         pred = rep(0, sampleSize)
         if (method == 'logistic') {
-            probs = predict(glmmod.best, newx = resample.x, type = 'response')
+            probs = predict(modelObject, newx = resample.x, type = 'response')
         } else if (method == 'lda') {
-            probs = predict.sda(sda.fit, resample.x)
+            probs = predict.sda(modelObject, resample.x[, idx])
         } else if (method == 'knn') {
             probs = knn.pred(data.subset.x, resample.x, data.subset.y, k = threshold)
         } else if (method == 'qda') {
-            probs = predict(qda.fit, resample.x)
+            probs = predict(modelObject, resample.x)
         } else {
             break;
         }
 
-        if (method != 'knn') {
+        if (method == 'lda' || method == 'qda') {
+            pred[probs$posterior[, 2] > threshold] = 1
+        } else if (method != 'knn') {
             pred[probs > threshold] = 1
         }
 
-        BSErrors[i] = getMetrics(pred, resample.y, sampleSize)
+        metrics = getMetrics(pred, resample.y, sampleSize)
+        BSErrors[i, 'Accuracy'] = metrics$accuracy
+        BSErrors[i, 'TP'] = metrics$tp
+        BSErrors[i, 'FP'] = metrics$fp
     }
 
-    hist(BSErrors, main = paste(method, 'bootstrapping', sep = ' '))
-    mean(BSErrors)
+    BSErrors
 }
 
-sampleSize <- 1000
-numSamples <- 1000
+plotBS = function(results) {
+    par(mfrow = c(3, 1))
+    hist(results[, 'Accuracy'])
+    hist(results[, 'TP'])
+    hist(results[, 'FP'])
+}
 
+# logistic regression
+bsLogistic = getResampleMSE('logistic', glmmod.best, glm.decBound)
+plotBS(bsLogistic)
+
+# non-collinear LDA
+bsLDA = getResampleMSE('lda', sda.fit, decBoundLDA, idx = idx)
+plotBS(bsLDA)
+
+# collinear LDA
+bsLDACollinear = getResampleMSE('lda', sda.fit2, , decBoundLDA2, idx = idx2, collinear = TRUE)
+plotBS(bsLDACollinear)
+
+# QDA
+bsQDA = getResampleMSE('qda', qda.fit, decBoundQDA)
+plotBS(bsQDA)
+
+# KNN
+bsKNN = getResampleMSE('knn', threshold = bestk)
+plotBS(bsKNN)
