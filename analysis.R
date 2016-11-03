@@ -430,10 +430,16 @@ plotBS = function(results) {
 # logistic regression
 bsLogistic = getResampleMSE('logistic', glmmod.best, glm.decBound)
 plotBS(bsLogistic)
+mean(bsLogistic[, 'Accuracy']) # 0.81857
+mean(bsLogistic[, 'TP']) # 0.358364
+mean(bsLogistic[, 'FP']) # 0.050743
 
 # non-collinear LDA
 bsLDA = getResampleMSE('lda', sda.fit, decBoundLDA, idx = idx)
 plotBS(bsLDA)
+mean(bsLDA[, 'Accuracy']) # 0.66668
+mean(bsLDA[, 'TP']) # 0.168455
+mean(bsLDA[, 'FP']) # 0.192264
 
 # collinear LDA
 bsLDACollinear = getResampleMSE('lda', sda.fit2, , decBoundLDA2, idx = idx2, collinear = TRUE)
