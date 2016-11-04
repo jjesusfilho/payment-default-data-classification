@@ -367,7 +367,7 @@ for (j in 1:kfolds) {
 qda.auc = plotROC(cv.fp, cv.tp) #  0.6084
 decBounds = colMeans(cv.accuracy)
 plot(decBounds, xlab = 'Decision Boundary * 100', ylab = 'Accuracy')
-decBoundQDA = which.max(decBounds) # 0.99
+decBoundQDA = which.max(decBounds) / 100 # 0.99
 
 
 #############################
@@ -388,6 +388,8 @@ getResampleMSE = function(method, modelObject, threshold,
         resample.x = NULL
         if (collinear) {
             resample.x = model.matrix(default.payment.next.month ~ .^2, resample)[, -1]
+        } else if (method == 'knn') {
+            resample.x = model.matrix(default.payment.next.month ~ ., resample[, subsetCols])[, -1]
         } else {
             resample.x = model.matrix(default.payment.next.month ~ ., resample)[, -1]
         }
@@ -398,9 +400,9 @@ getResampleMSE = function(method, modelObject, threshold,
         } else if (method == 'lda') {
             probs = predict.sda(modelObject, resample.x[, idx])
         } else if (method == 'knn') {
-            probs = knn.pred(data.subset.x, resample.x, data.subset.y, k = threshold)
+            pred = knn(data.subset.x, resample.x, data.subset.y, k = threshold)
         } else if (method == 'qda') {
-            probs = predict(modelObject, resample.x)
+            probs = predict(modelObject, resample)
         } else {
             break;
         }
@@ -448,7 +450,13 @@ plotBS(bsLDACollinear)
 # QDA
 bsQDA = getResampleMSE('qda', qda.fit, decBoundQDA)
 plotBS(bsQDA)
+mean(bsQDA[, 'Accuracy']) # 0.786466
+mean(bsQDA[, 'TP']) # 0.322599
+mean(bsQDA[, 'FP']) # 0.08238881
 
 # KNN
 bsKNN = getResampleMSE('knn', threshold = bestk)
 plotBS(bsKNN)
+mean(bsKNN[, 'Accuracy']) # 0.823954
+mean(bsKNN[, 'TP']) # 0.3826066
+mean(bsKNN[, 'FP']) # 0.0505093
