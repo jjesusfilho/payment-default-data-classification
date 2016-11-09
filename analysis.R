@@ -317,7 +317,7 @@ for (j in 1:kfolds) {
 sda.auc2 = plotROC(cv.fp, cv.tp) # 0.6868
 decBounds = colMeans(cv.accuracy)
 plot(decBounds, xlab = 'Decision Boundary * 100', ylab = 'Accuracy')
-decBoundLDA2 = which.max(decBounds) / 100 # 0.45
+decBoundLDA2 = which.max(decBounds) / 100 # 0.34
 
 
 ################################################
@@ -386,6 +386,7 @@ getResampleMSE = function(method, modelObject, threshold,
         resample = data[sample(1:rows, sampleSize, replace = TRUE), ]
         resample.y = resample$default.payment.next.month
         resample.x = NULL
+
         if (collinear) {
             resample.x = model.matrix(default.payment.next.month ~ .^2, resample)[, -1]
         } else if (method == 'knn') {
@@ -444,8 +445,11 @@ mean(bsLDA[, 'TP']) # 0.168455
 mean(bsLDA[, 'FP']) # 0.192264
 
 # collinear LDA
-bsLDACollinear = getResampleMSE('lda', sda.fit2, , decBoundLDA2, idx = idx2, collinear = TRUE)
+bsLDACollinear = getResampleMSE('lda', sda.fit2, decBoundLDA2, idx = idx2, collinear = TRUE)
 plotBS(bsLDACollinear)
+mean(bsLDACollinear[, 'Accuracy']) # 0.282957
+mean(bsLDACollinear[, 'TP']) # 0.8708301
+mean(bsLDACollinear[, 'FP']) # 0.8841399
 
 # QDA
 bsQDA = getResampleMSE('qda', qda.fit, decBoundQDA)
