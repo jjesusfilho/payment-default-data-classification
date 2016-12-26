@@ -180,7 +180,7 @@ glm.decBound <- which.max(decBounds) / 100 # 0.42
 #                                    #
 ######################################
 ##
- # Using the rknn package to perform feature selection seems to frequently run
+ # Using the `rknn` package to perform feature selection seems to frequently run
  # into too many ties, even after adding noise. Therefore, we are going to use 
  # LASSO to perform feature selection, be selecting features whose coefficients
  # is greater than 0.001 in the LASSO model.
@@ -203,14 +203,14 @@ data.subset.y = data.subset$default.payment.next.month
  # cv.accuracy[j, i] is the accuracy percentage of the j-th fold with i as the
  # number of neighbours in the model
  ##
-cv.accuracy = matrix(NA, kfolds, ncol(data.subset.x))
+cv.accuracy = matrix(NA, kfolds, 25)
 for (j in 1:kfolds) {
     newx = data.subset.x[folds != j, ]
     newy = data.subset.y[folds != j]
     foldx = data.subset.x[folds == j, ]
     foldy = data.subset.y[folds == j]
 
-    for (i in 1:ncol(data.subset.x)) {
+    for (i in 1:25) {
         knn.pred = knn(newx, foldx, newy, k = i)
         cv.accuracy[j, i] = getMetrics(knn.pred, foldy, nrow(foldx))$accuracy
     }
@@ -219,7 +219,9 @@ for (j in 1:kfolds) {
 
 neighbours = colMeans(cv.accuracy)
 plot(neighbours, xlab = 'Number of Neighbours', ylab = 'Accuracy')
-bestk <- which.max(neighbours) # 10
+bestk <- which.max(neighbours) # 23
+# from 18 to 25, there is no significant increase in accuracy, so we settle for less neighbours
+bestk <- 18
 
 
 
